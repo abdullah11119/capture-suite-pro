@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { Monitor, Mic, Camera, Clock, Settings, Sun, Moon, Menu, X } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 
