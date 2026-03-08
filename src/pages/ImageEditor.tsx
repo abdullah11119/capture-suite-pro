@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowRight, Circle, Download, Highlighter, MousePointer, Redo2,
-  RectangleHorizontal, Type, Undo2, Eraser, Hash
+  RectangleHorizontal, Type, Undo2, Hash, Droplets
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { getItem, downloadBlob } from "@/lib/storage";
 import { toast } from "@/hooks/use-toast";
 
@@ -34,10 +35,12 @@ export default function ImageEditor() {
   const [redoStack, setRedoStack] = useState<DrawAction[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [stepCount, setStepCount] = useState(1);
+  const [watermarkText, setWatermarkText] = useState("");
+  const [showWatermark, setShowWatermark] = useState(false);
   const currentAction = useRef<DrawAction | null>(null);
   const startPos = useRef({ x: 0, y: 0 });
 
-  const redraw = useCallback((allActions: DrawAction[]) => {
+  const redraw = useCallback((allActions: DrawAction[], wmText?: string) => {
     const canvas = canvasRef.current;
     const img = bgImageRef.current;
     if (!canvas || !img) return;
@@ -58,7 +61,6 @@ export default function ImageEditor() {
         ctx.moveTo(start.x, start.y);
         ctx.lineTo(end.x, end.y);
         ctx.stroke();
-        // Arrowhead
         const angle = Math.atan2(end.y - start.y, end.x - start.x);
         const headLen = 15;
         ctx.beginPath();
@@ -113,7 +115,30 @@ export default function ImageEditor() {
         ctx.textBaseline = "alphabetic";
       }
     }
-  }, []);
+
+    // Draw watermark
+    const wm = wmText ?? watermarkText;
+    if (wm) {
+      ctx.save();
+      ctx.globalAlpha = 0.15;
+      ctx.font = `bold ${Math.max(24, canvas.width / 20)}px Space Grotesk, sans-serif`;
+      ctx.fillStyle = "#888888";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      // Tiled diagonal watermark
+      const diag = Math.sqrt(canvas.width ** 2 + canvas.height ** 2);
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(-Math.PI / 6);
+      const spacing = Math.max(120, canvas.width / 5);
+      for (let y = -diag; y < diag; y += spacing) {
+        for (let x = -diag; x < diag; x += spacing * 2) {
+          ctx.fillText(wm, x, y);
+        }
+      }
+      ctx.restore();
+    }
+  }, [watermarkText]);
 
   useEffect(() => {
     if (!id) return;
@@ -127,7 +152,6 @@ export default function ImageEditor() {
       img.onload = () => {
         bgImageRef.current = img;
         const canvas = canvasRef.current!;
-        // Scale to fit max 900px wide
         const scale = Math.min(1, 900 / img.width);
         canvas.width = img.width * scale;
         canvas.height = img.height * scale;
@@ -137,14 +161,23 @@ export default function ImageEditor() {
     });
   }, [id, navigate, redraw]);
 
-  const getPos = (e: React.MouseEvent) => {
+  // Re-draw when watermark changes
+  useEffect(() => {
+    redraw(actions, watermarkText);
+  }, [watermarkText]);
+
+  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect();
     const scaleX = canvasRef.current!.width / rect.width;
     const scaleY = canvasRef.current!.height / rect.height;
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+    if ("touches" in e) {
+      const touch = e.touches[0] || (e as any).changedTouches[0];
+      return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
+    }
+    return { x: ((e as React.MouseEvent).clientX - rect.left) * scaleX, y: ((e as React.MouseEvent).clientY - rect.top) * scaleY };
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
     if (tool === "select") return;
     const pos = getPos(e);
     startPos.current = pos;
@@ -179,8 +212,9 @@ export default function ImageEditor() {
     };
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handlePointerMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing || !currentAction.current) return;
+    if ("touches" in e) e.preventDefault();
     const pos = getPos(e);
 
     if (currentAction.current.tool === "arrow" || currentAction.current.tool === "highlight") {
@@ -197,7 +231,7 @@ export default function ImageEditor() {
     redraw([...actions, currentAction.current]);
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = () => {
     if (!isDrawing || !currentAction.current) return;
     setIsDrawing(false);
     setActions((prev) => {
@@ -249,45 +283,82 @@ export default function ImageEditor() {
   const colors = ["#8b5cf6", "#3b82f6", "#ec4899", "#ef4444", "#22c55e", "#f59e0b", "#000000", "#ffffff"];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-display font-bold gradient-text">Image Editor</h1>
-        <p className="text-muted-foreground">Annotate and edit your screenshot</p>
+        <h1 className="text-2xl sm:text-3xl font-display font-bold gradient-text">Image Editor</h1>
+        <p className="text-muted-foreground text-sm sm:text-base">Annotate and edit your screenshot</p>
       </div>
 
       {/* Toolbar */}
-      <div className="glass-card p-3 flex flex-wrap items-center gap-2 justify-center">
+      <div className="glass-card p-2 sm:p-3 flex flex-wrap items-center gap-1.5 sm:gap-2 justify-center">
         {tools.map((t) => (
           <button
             key={t.id}
             onClick={() => setTool(t.id)}
-            className={`p-2 rounded-lg transition-colors ${
+            className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
               tool === t.id ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground"
             }`}
             title={t.label}
           >
-            <t.icon className="w-5 h-5" />
+            <t.icon className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         ))}
-        <div className="w-px h-6 bg-border mx-1" />
-        {colors.map((c) => (
-          <button
-            key={c}
-            onClick={() => setColor(c)}
-            className={`w-6 h-6 rounded-full border-2 transition-transform ${
-              color === c ? "border-foreground scale-125" : "border-transparent"
-            }`}
-            style={{ backgroundColor: c }}
-          />
-        ))}
-        <div className="w-px h-6 bg-border mx-1" />
-        <Button onClick={undo} variant="ghost" size="icon" title="Undo">
+        <div className="w-px h-5 sm:h-6 bg-border mx-0.5 sm:mx-1" />
+        <div className="flex gap-1 flex-wrap justify-center">
+          {colors.map((c) => (
+            <button
+              key={c}
+              onClick={() => setColor(c)}
+              className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 transition-transform ${
+                color === c ? "border-foreground scale-125" : "border-transparent"
+              }`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+        <div className="w-px h-5 sm:h-6 bg-border mx-0.5 sm:mx-1" />
+        <Button onClick={undo} variant="ghost" size="icon" title="Undo" className="h-8 w-8 sm:h-10 sm:w-10">
           <Undo2 className="w-4 h-4" />
         </Button>
-        <Button onClick={redo} variant="ghost" size="icon" title="Redo">
+        <Button onClick={redo} variant="ghost" size="icon" title="Redo" className="h-8 w-8 sm:h-10 sm:w-10">
           <Redo2 className="w-4 h-4" />
         </Button>
-        <div className="w-px h-6 bg-border mx-1" />
+      </div>
+
+      {/* Watermark */}
+      <div className="glass-card p-3 sm:p-4">
+        <button
+          onClick={() => setShowWatermark(!showWatermark)}
+          className="flex items-center gap-2 text-sm font-medium w-full"
+        >
+          <Droplets className="w-4 h-4 text-primary" />
+          Watermark
+          <span className="text-xs text-muted-foreground ml-auto">
+            {watermarkText ? "Active" : "Off"}
+          </span>
+        </button>
+        {showWatermark && (
+          <div className="mt-3 flex gap-2">
+            <Input
+              placeholder="Enter watermark text..."
+              value={watermarkText}
+              onChange={(e) => setWatermarkText(e.target.value)}
+              className="flex-1 h-9 text-sm"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setWatermarkText(""); }}
+              className="text-xs"
+            >
+              Clear
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Export buttons */}
+      <div className="flex gap-2 justify-center flex-wrap">
         <Button onClick={() => handleExport("png")} size="sm" className="gradient-bg text-primary-foreground">
           <Download className="w-4 h-4 mr-1" /> PNG
         </Button>
@@ -297,14 +368,17 @@ export default function ImageEditor() {
       </div>
 
       {/* Canvas */}
-      <div className="glass-card p-4 flex justify-center overflow-auto">
+      <div className="glass-card p-2 sm:p-4 flex justify-center overflow-auto touch-none">
         <canvas
           ref={canvasRef}
           className="max-w-full cursor-crosshair rounded-lg"
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          onMouseDown={handlePointerDown}
+          onMouseMove={handlePointerMove}
+          onMouseUp={handlePointerUp}
+          onMouseLeave={handlePointerUp}
+          onTouchStart={handlePointerDown}
+          onTouchMove={handlePointerMove}
+          onTouchEnd={handlePointerUp}
         />
       </div>
     </div>
