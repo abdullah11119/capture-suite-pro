@@ -18,6 +18,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  useKeyboardShortcuts();
 
   return (
     <div className="min-h-screen bg-background">
