@@ -1,6 +1,15 @@
 import { Monitor, Mic, Camera, Clock, Settings, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 
+declare const chrome: {
+  tabs?: {
+    create: (options: { url: string }) => void;
+  };
+  runtime?: {
+    getURL: (path: string) => string;
+  };
+};
+
 const actions = [
   { icon: Monitor, label: "Record Screen", path: "/record-screen" },
   { icon: Mic, label: "Record Voice", path: "/record-voice" },
@@ -13,7 +22,7 @@ const secondaryActions = [
 ];
 
 function openPage(path: string) {
-  if (typeof chrome !== "undefined" && chrome.tabs) {
+  if (typeof chrome !== "undefined" && chrome.tabs && chrome.runtime) {
     chrome.tabs.create({
       url: chrome.runtime.getURL(`index.html#${path}`),
     });
